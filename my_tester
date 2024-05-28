@@ -1,0 +1,116 @@
+#!/bin/bash
+
+declare bash_outfile1
+declare outfile1
+
+# if [ $# -ne 4 ];
+# then
+#     echo "magic_tester: usage: <_infile> <_cmd1> <_cmd2> <_outfile>"
+#     exit 4;
+# fi
+
+get_bash_filename()
+{
+    local outfile="$1"
+    local filename="${outfile%.*}"
+    local extension="${outfile##*.}"
+    local new_outfile="${filename}_bash.${extension}"
+    echo "$new_outfile"
+}
+
+has_ext()
+{
+    local str="$1"
+    if [[ $str == *.* && $str != .* ]];
+    then
+        return 0
+    else
+        return 1
+    fi
+}
+
+test_cases()
+{
+    local infile="$1"
+    local cmd1="$2"
+    local cmd2="$3"
+    outfile1="$4"
+    local tmp_bash_err=$(mktemp)
+    local tmp_pipex_err=$(mktemp)
+    local bash_exit_code
+    local pipex_exit_code
+    local bash_err
+    local pipex_err
+
+    if has_ext "$4";
+    then
+        bash_outfile1=$(get_bash_filename "$4")
+    elif [ -n "$outfile1" ];
+    then
+        bash_outfile1="${4}_bash"
+    fi
+
+    { < "$infile" "$cmd1" | "$cmd2" > "$bash_outfile1"; } 2> "$tmp_bash_err"
+    bash_exit_code=$?
+    { ./pipex "$infile" "$cmd1" "$cmd2" "$outfile1" ; } 2> "$tmp_pipex_err"
+    pipex_exit_code=$?
+
+    bash_err=$(cat "$tmp_bash_err")
+    pipex_err=$(cat "$tmp_pipex_err")
+    rm -f "$tmp_bash_err" "$tmp_pipex_err"
+
+    bash_err=$( echo "$bash_err" | rev | cut -d ':' -f 1,2 | rev )
+    pipex_err=$( echo "$pipex_err" | rev | cut -d ':' -f 1,2 | rev )
+
+
+    if [ $bash_exit_code -eq 0 ];
+    then
+        if diff "$bash_outfile1" "$outfile1" > /dev/null;
+        then
+            if [ $pipex_exit_code -ne $bash_exit_code ];
+            then
+                echo "KO"
+                echo "pipex exit code: $pipex_exit_code"
+                echo "bash exit code: $bash_exit_code"
+            else
+                echo "OK"
+            fi
+        else
+            echo "KO"
+            echo "pipex output----------------exit code $pipex_exit_code"
+            cat "$outfile1"
+            echo "bash output-----------------exit code $bash_exit_code"
+            cat "$bash_outfile1"
+        fi
+    else
+        if [ "$bash_err" = "$pipex_err" ];
+        then
+            if [ $pipex_exit_code -ne $bash_exit_code ];
+            then
+                echo "KO"
+                echo "pipex exit code: $pipex_exit_code"
+                echo "bash exit code: $bash_exit_code"
+            else
+                echo "OK"
+            fi
+        else
+            echo "KO"
+            echo "pipex error----------------exit code $pipex_exit_code"
+            echo "$pipex_err"
+            echo "bash error----------------exit code $bash_exit_code"
+            echo "$bash_err"
+        fi
+    fi
+}
+echo -n "1."
+test_cases "Makefile" "cat" "wc" "output"
+echo -n "2."
+test_cases "Makefile" "cat" "cmd2" "output"
+echo -n "3."
+test_cases "Makefile" "cmd1" "wc" "output"
+echo -n "4."
+test_cases "Makefile" "cmd1" "cmd2" "output"
+echo -n "5."
+test_cases "opel" "" "wc" "output"
+echo -n "6."
+test_cases "opel" "cat" "" "output"
